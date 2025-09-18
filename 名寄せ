@@ -1,0 +1,194 @@
+Power Query（M言語）で文字列の類似度判定を行うには、標準関数だけでは直接的な類似度スコア（例：Jaccard、Levenshtein距離など）を計算する機能はありませんが、**近似一致**や**部分一致**を使って、実用的な類似度判定を構築することは可能です。
+
+以下は、**与えられた文字列と候補リストの各文字列との類似度を判定し、最も類似度が高いものを選ぶ**サンプル式です。ここでは簡易的に `Text.PositionOf` や `Text.Contains` を使ったスコアリングを行い、最も一致度が高い文字列を返すロジックを紹介します。
+
+---
+
+### 🧪 サンプル：類似度スコアを計算して最も近い文字列を返す
+
+```m
+let
+    // 元の文字列
+    inputText = "東京駅",
+
+    // 候補リスト
+    candidates = {"東京", "品川駅", "新宿", "東京タワー", "京都駅"},
+
+    // 類似度スコアを計算する関数（部分一致 + 位置スコア）
+    similarityScore = (target as text, candidate as text) as number =>
+        let
+            containsScore = if Text.Contains(candidate, target) then 1 else 0,
+            positionScore = try Text.PositionOf(candidate, target) otherwise -1,
+            normalizedPosition = if positionScore >= 0 then 1 - (positionScore / Text.Length(candidate)) else 0,
+            totalScore = containsScore + normalizedPosition
+        in
+            totalScore,
+
+    // 各候補に対してスコアを計算
+    scoredList = List.Transform(candidates, each [
+        Candidate = _,
+        Score = similarityScore(inputText, _)
+    ]),
+
+    // スコア順に並べ替え
+    sortedList = List.Sort(scoredList, Order.By([Score], Order.Descending)),
+
+    // 最も類似度が高いものを取得
+    bestMatch = List.First(sortedList),
+
+    // 結果をペアとして返却
+    result = [Input = inputText, BestMatch = bestMatch[Candidate], Score = bestMatch[Score]]
+in
+    result
+```
+
+---
+
+### 🧠 補足ポイント
+
+- `Text.Contains` は部分一致の有無を判定。
+- `Text.PositionOf` を使って一致位置をスコア化（先頭に近いほど高スコア）。
+- より高度な類似度（例：Levenshtein距離）を使いたい場合は、**R言語やPythonとの統合**、または**Azure ML経由のAPI呼び出し**が必要です。
+
+---
+
+### 🔧 応用アイデア
+
+- 候補リストをテーブル化して、複数の元文字列に対してバッチ処理。
+- 類似度スコアのしきい値を設定して、一定以上の一致のみ返す。
+- 日本語特有の表記揺れ（例：「東京駅」 vs 「とうきょうえき」）に対応するには、**形態素解析API**との連携も検討可能。
+
+---
+
+もし、GA4のイベント名やクエリパラメータの類似判定など、実務的なユースケースがあれば、それに合わせた最適化もできますよ。どんな場面で使いたいか、もう少し教えていただければさらに精緻化できます。
+
+
+なるほど、企業名の表記揺れをマスター表記に正規化する処理ですね。これは日本語特有の課題も含みつつ、データ品質や業務効率に直結する重要なテーマです。Power Query（M言語）での自動化アプローチを、以下のように整理できます。
+
+---
+
+## 🧭 処理の全体像
+
+1. **入力データ**：表記揺れのある企業名（例：「㈱トヨタ」「トヨタ自動車株式会社」「トヨタ」など）
+2. **マスターリスト**：正規化された企業名（例：「トヨタ自動車株式会社」）
+3. **類似度判定ロジック**：各入力名とマスター名の類似度を計算
+4. **最も類似度の高いマスター名を紐付ける**
+
+---
+
+## 🧪 Power Queryでのサンプルロジック
+
+以下は、簡易的な類似度スコアを使って、最も近いマスター企業名を返す例です：
+
+```m
+let
+    // 入力企業名（表記揺れあり）
+    inputNames = {"㈱トヨタ", "トヨタ", "トヨタ自動車", "トヨタ自動車株式会社"},
+
+    // マスター企業名リスト
+    masterNames = {"トヨタ自動車株式会社", "日産自動車株式会社", "ホンダ株式会社"},
+
+    // 正規化関数（記号除去・全角→半角など）
+    normalize = (text as text) as text =>
+        Text.Upper(Text.Remove(Text.Trim(text), {"㈱", "株式会社", "（株）", " ", "　"})),
+
+    // 類似度スコア（部分一致 + 位置スコア）
+    similarityScore = (input as text, master as text) as number =>
+        let
+            normInput = normalize(input),
+            normMaster = normalize(master),
+            containsScore = if Text.Contains(normMaster, normInput) then 1 else 0,
+            positionScore = try Text.PositionOf(normMaster, normInput) otherwise -1,
+            normalizedPosition = if positionScore >= 0 then 1 - (positionScore / Text.Length(normMaster)) else 0,
+            totalScore = containsScore + normalizedPosition
+        in
+            totalScore,
+
+    // 各入力名に対して最も類似度の高いマスター名を紐付け
+    matchResults = List.Transform(inputNames, each
+        let
+            input = _,
+            scoredMasters = List.Transform(masterNames, each [
+                Master = _,
+                Score = similarityScore(input, _)
+            ]),
+            sorted = List.Sort(scoredMasters, Order.By([Score], Order.Descending)),
+            bestMatch = List.First(sorted)
+        in
+            [Input = input, MatchedMaster = bestMatch[Master], Score = bestMatch[Score]]
+    )
+in
+    matchResults
+```
+
+---
+
+## 🧠 実務向けの強化ポイント
+
+- **正規化処理の強化**：ひらがな⇔カタカナ変換、全角⇔半角、記号除去、略称展開（例：「トヨタ」→「トヨタ自動車株式会社」）
+- **辞書ベースの補完**：略称・旧社名・ブランド名などを辞書テーブルで補完
+- **外部API連携**：Levenshtein距離やJaro-Winklerなどを使いたい場合、Python/RやAzure ML経由で呼び出し可能
+- **スコアしきい値の設定**：類似度が一定以上でない場合は「不一致」としてフラグ付け
+
+---
+
+## 📦 応用例
+
+- GA4の企業別イベント分析で、広告主名の揺れを統一
+- Power BIで企業別売上集計時に、表記揺れを吸収
+- 契約書や請求書のOCR結果の企業名をマスターにマッチング
+
+---
+
+この処理、####さんのようにDAXやPower BIに精通している方なら、**DAX側での補正ロジック**や**Power Queryでの前処理設計**も含めて、かなり柔軟に構築できると思います。もし辞書テーブルの設計や、Azure連携による高度な類似度判定も視野に入れているなら、そこも一緒に設計できますよ。どこまで自動化したいか、もう少し教えていただければさらに深掘りできます。
+
+
+
+鋭い視点ですね。結論から言うと、**処理負荷はデータ量と類似度ロジックの複雑さに応じて変動します**。Power Query（M言語）での類似度判定は、以下の観点で負荷を評価できます：
+
+---
+
+## ⚙️ 処理負荷の主な要因
+
+| 要因 | 内容 | 負荷への影響 |
+|------|------|---------------|
+| **入力件数 × マスター件数** | 例えば1000件の入力 × 500件のマスター → 50万回の比較 | 高負荷になりやすい |
+| **類似度ロジックの複雑さ** | `Text.Contains` や `Text.PositionOf` は軽量だが、正規化処理やスコア計算が複雑になると遅延 | 中〜高 |
+| **Power Queryの実行環境** | Excel vs Power BI Desktop vs Power BI Service（クラウド） | Power BI Serviceでは並列処理が効くが、制限もあり |
+| **キャッシュ・ステップ分割** | 中間ステップをキャッシュ化・分割することで負荷軽減可能 | 最適化次第で改善 |
+
+---
+
+## 🧠 ####さん向けの最適化アプローチ
+
+あなたのようにDAXやPower BIに精通している方なら、以下のような戦略的最適化が可能です：
+
+### 1. **事前正規化の徹底**
+- 企業名の表記揺れをあらかじめ正規化（記号除去、略称展開、全角→半角など）
+- 正規化済みの列を別テーブルに保持して、比較対象を減らす
+
+### 2. **類似度スコアのしきい値設定**
+- スコアが一定以下の候補は除外（例：0.5未満は無視）
+- `List.Select` でフィルタリングして比較回数を削減
+
+### 3. **Power BI側での補完処理**
+- Power Queryで「候補絞り込み」→ DAXで「最終マッチング」
+- DAXの`CONTAINSSTRING`や`SEARCH`を使った軽量な補正も併用可能
+
+### 4. **辞書テーブルの活用**
+- よくある略称・旧社名・ブランド名を辞書化して、直接マッピング
+- 類似度判定を回避できるケースが増える
+
+---
+
+## 🧪 負荷テストの目安
+
+- 100件 × 100件程度なら、Power BI Desktopでも数秒〜十数秒で処理可能
+- 1000件 × 1000件以上になると、**Power Query単体では厳しくなる**ため、Azure FunctionsやPython連携を検討
+
+---
+
+もし「月次で企業名を正規化する」ような定期処理なら、**一度マッチング結果を保存して差分のみ再判定**する設計も有効です。  
+必要なら、**負荷試算のためのベンチマーク式**も一緒に作れますよ。
+
+どの程度の件数・頻度で運用したいか、もう少し教えていただければ、より具体的な最適化案を提案できます。
