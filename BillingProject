@@ -1,0 +1,65 @@
+課金プロジェクトID（BillingProject）とは、BigQueryなどのGCPサービス利用時に**クエリ実行やデータ処理の課金元となるプロジェクトID**のことです。Power BIなど外部ツールからBigQueryに接続する際に、明示的に指定する必要がある場合があります。
+
+---
+
+### ✅ 課金プロジェクトIDの確認方法（GCPコンソール）
+
+#### 方法①：課金アカウントから紐づくプロジェクトを確認
+
+1. GCPコンソールにアクセス  
+   [https://console.cloud.google.com/](https://console.cloud.google.com/)
+
+2. 左上の「ナビゲーションメニュー」 → **「課金」** をクリック
+
+3. 表示された課金アカウントを選択
+
+4. 「課金対象のプロジェクト」タブを開く  
+   → ここに表示されている **プロジェクトID** が課金プロジェクトIDとして利用可能です
+
+---
+
+#### 方法②：BigQueryコンソールで確認
+
+1. GCPコンソールで **BigQuery** にアクセス  
+   [https://console.cloud.google.com/bigquery](https://console.cloud.google.com/bigquery)
+
+2. 左側ペインに表示されるプロジェクト一覧のうち、**クエリが実行可能なプロジェクト**が課金プロジェクト候補です
+
+3. クエリエディタで以下のようなクエリを試して、課金エラーが出ないか確認するのも有効です：
+
+```sql
+SELECT CURRENT_DATE()
+```
+
+→ 実行できれば、そのプロジェクトIDは課金プロジェクトとして利用可能です。
+
+---
+
+#### 方法③：gcloud CLIで確認（開発者向け）
+
+```bash
+gcloud projects list
+```
+
+でプロジェクト一覧を取得し、さらに課金アカウントとの紐付けを確認するには：
+
+```bash
+gcloud beta billing projects describe [PROJECT_ID]
+```
+
+このコマンドで課金アカウントが紐づいているかどうかが確認できます。
+
+---
+
+### 💡補足：BillingProjectの指定が必要な理由
+
+Power BIや外部ツールからBigQueryに接続する際、**データセットのプロジェクトIDと課金プロジェクトIDが異なる**場合があります。  
+そのため、以下のように明示的に指定することで、リージョン誤認や課金エラーを防ぐことができます：
+
+```powerquery
+GoogleBigQuery.Database("data-project-id", [BillingProject="billing-project-id"])
+```
+
+---
+
+必要であれば、IAMロールの確認方法やPower BI接続スクリプトの具体例もご案内できます。どのプロジェクトで課金したいか、もう少し詳しく教えていただければ、より正確にサポートできますよ。
